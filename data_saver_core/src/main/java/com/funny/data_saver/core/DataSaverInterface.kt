@@ -2,19 +2,30 @@ package com.funny.data_saver.core
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 /**
  * The interface is used to save/read data. We provide the basic implementation using Preference, DataStore and MMKV.
  *
  * If you want to write your own, you need to implement `saveData` and `readData`. Besides, a suspend function `saveDataAsync` is optional(which is equal to `saveData` by default)
  */
-interface DataSaverInterface{
-    fun <T> saveData(key:String, data : T)
-    fun <T> readData(key: String, default : T) : T
-    suspend fun <T> saveDataAsync(key:String, data : T) = saveData(key, data)
+interface DataSaverInterface {
+    fun <T> saveData(key: String, data: T)
+    fun <T> readData(key: String, default: T): T
+    suspend fun <T> saveDataAsync(key: String, data: T) = saveData(key, data)
     fun remove(key: String)
+    open fun initOnUpdateCallback(
+        scope: CoroutineScope,
+        callback: (key: String) -> Unit
+    ) {
+    }
 }
 
 /**
@@ -50,6 +61,25 @@ class DataSaverPreferences(private val preference: SharedPreferences) : DataSave
         return res as T
     }
 
+    override fun initOnUpdateCallback(
+        scope: CoroutineScope,
+        callback: (key: String) -> Unit
+    ) {
+        scope.launch {
+            callbackFlow {
+                val listener = OnSharedPreferenceChangeListener { _, key -> trySend(key) }
+
+                preference.registerOnSharedPreferenceChangeListener(listener)
+
+                awaitClose {
+                    preference.unregisterOnSharedPreferenceChangeListener(listener)
+                }
+            }.collectLatest {
+                callback(it)
+            }
+        }
+    }
+
     override fun remove(key: String) {
         preference.edit().remove(key).apply()
     }
@@ -59,6 +89,6 @@ class DataSaverPreferences(private val preference: SharedPreferences) : DataSave
  * You can call `LocalDataSaver.current` inside a [androidx.compose.runtime.Composable] to
  * get the instance you've provided. You can call `readData` and `saveData` then.
  */
-var LocalDataSaver : ProvidableCompositionLocal<DataSaverInterface> = staticCompositionLocalOf {
+var LocalDataSaver: ProvidableCompositionLocal<DataSaverInterface> = staticCompositionLocalOf {
     error("No instance of DataSaveInterface is provided, please call `CompositionLocalProvider(LocalDataSaver provides dataSaverPreferences){}` first. See the README of the repo ComposeDataSaver to learn more")
 }

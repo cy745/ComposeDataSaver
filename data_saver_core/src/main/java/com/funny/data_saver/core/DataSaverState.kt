@@ -53,7 +53,16 @@ class DataSaverMutableState<T>(
         key,
         value,
         if (autoSave) SavePolicy.IMMEDIATELY else SavePolicy.NEVER
-    )
+    ) {
+        dataSaverInterface.initOnUpdateCallback(scope) {
+            if (it == key) {
+                val newValue = dataSaverInterface.readData(key, this.state.value)
+                if (this.state.value != newValue) {
+                    this.state.value = newValue
+                }
+            }
+        }
+    }
 
     operator fun setValue(thisObj: Any?, property: KProperty<*>, value: T) {
         doSetValue(value)
@@ -68,7 +77,7 @@ class DataSaverMutableState<T>(
      * to do that.
      */
     fun saveData() {
-        if (value == null){
+        if (value == null) {
             dataSaverInterface.remove(key)
             return
         }
